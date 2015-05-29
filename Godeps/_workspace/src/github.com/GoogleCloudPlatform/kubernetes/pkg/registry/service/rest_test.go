@@ -25,7 +25,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/rest"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/rest/resttest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/conversion"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/registrytest"
@@ -60,7 +59,7 @@ func makeIPNet(t *testing.T) *net.IPNet {
 }
 
 func deepCloneService(svc *api.Service) *api.Service {
-	value, err := conversion.DeepCopy(svc)
+	value, err := api.Scheme.DeepCopy(svc)
 	if err != nil {
 		panic("couldn't copy service")
 	}
@@ -97,8 +96,8 @@ func TestServiceRegistryCreate(t *testing.T) {
 	if created_service.CreationTimestamp.IsZero() {
 		t.Errorf("Expected timestamp to be set, got: %v", created_service.CreationTimestamp)
 	}
-	if !makeIPNet(t).Contains(net.ParseIP(created_service.Spec.PortalIP)) {
-		t.Errorf("Unexpected PortalIP: %s", created_service.Spec.PortalIP)
+	if !makeIPNet(t).Contains(net.ParseIP(created_service.Spec.ClusterIP)) {
+		t.Errorf("Unexpected ClusterIP: %s", created_service.Spec.ClusterIP)
 	}
 	srv, err := registry.GetService(ctx, svc.Name)
 	if err != nil {
@@ -518,8 +517,8 @@ func TestServiceRegistryIPAllocation(t *testing.T) {
 	if created_service_1.Name != "foo" {
 		t.Errorf("Expected foo, but got %v", created_service_1.Name)
 	}
-	if !makeIPNet(t).Contains(net.ParseIP(created_service_1.Spec.PortalIP)) {
-		t.Errorf("Unexpected PortalIP: %s", created_service_1.Spec.PortalIP)
+	if !makeIPNet(t).Contains(net.ParseIP(created_service_1.Spec.ClusterIP)) {
+		t.Errorf("Unexpected ClusterIP: %s", created_service_1.Spec.ClusterIP)
 	}
 
 	svc2 := &api.Service{
@@ -539,14 +538,14 @@ func TestServiceRegistryIPAllocation(t *testing.T) {
 	if created_service_2.Name != "bar" {
 		t.Errorf("Expected bar, but got %v", created_service_2.Name)
 	}
-	if !makeIPNet(t).Contains(net.ParseIP(created_service_2.Spec.PortalIP)) {
-		t.Errorf("Unexpected PortalIP: %s", created_service_2.Spec.PortalIP)
+	if !makeIPNet(t).Contains(net.ParseIP(created_service_2.Spec.ClusterIP)) {
+		t.Errorf("Unexpected ClusterIP: %s", created_service_2.Spec.ClusterIP)
 	}
 
 	testIPs := []string{"1.2.3.93", "1.2.3.94", "1.2.3.95", "1.2.3.96"}
 	testIP := ""
 	for _, ip := range testIPs {
-		if !rest.portals.(*ipallocator.Range).Has(net.ParseIP(ip)) {
+		if !rest.serviceIPs.(*ipallocator.Range).Has(net.ParseIP(ip)) {
 			testIP = ip
 		}
 	}
@@ -555,7 +554,7 @@ func TestServiceRegistryIPAllocation(t *testing.T) {
 		ObjectMeta: api.ObjectMeta{Name: "quux"},
 		Spec: api.ServiceSpec{
 			Selector:        map[string]string{"bar": "baz"},
-			PortalIP:        testIP,
+			ClusterIP:       testIP,
 			SessionAffinity: api.ServiceAffinityNone,
 			Type:            api.ServiceTypeClusterIP,
 			Ports: []api.ServicePort{{
@@ -570,8 +569,8 @@ func TestServiceRegistryIPAllocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	created_service_3 := created_svc3.(*api.Service)
-	if created_service_3.Spec.PortalIP != testIP { // specific IP
-		t.Errorf("Unexpected PortalIP: %s", created_service_3.Spec.PortalIP)
+	if created_service_3.Spec.ClusterIP != testIP { // specific IP
+		t.Errorf("Unexpected ClusterIP: %s", created_service_3.Spec.ClusterIP)
 	}
 }
 
@@ -596,8 +595,8 @@ func TestServiceRegistryIPReallocation(t *testing.T) {
 	if created_service_1.Name != "foo" {
 		t.Errorf("Expected foo, but got %v", created_service_1.Name)
 	}
-	if !makeIPNet(t).Contains(net.ParseIP(created_service_1.Spec.PortalIP)) {
-		t.Errorf("Unexpected PortalIP: %s", created_service_1.Spec.PortalIP)
+	if !makeIPNet(t).Contains(net.ParseIP(created_service_1.Spec.ClusterIP)) {
+		t.Errorf("Unexpected ClusterIP: %s", created_service_1.Spec.ClusterIP)
 	}
 
 	_, err := rest.Delete(ctx, created_service_1.Name)
@@ -623,8 +622,8 @@ func TestServiceRegistryIPReallocation(t *testing.T) {
 	if created_service_2.Name != "bar" {
 		t.Errorf("Expected bar, but got %v", created_service_2.Name)
 	}
-	if !makeIPNet(t).Contains(net.ParseIP(created_service_2.Spec.PortalIP)) {
-		t.Errorf("Unexpected PortalIP: %s", created_service_2.Spec.PortalIP)
+	if !makeIPNet(t).Contains(net.ParseIP(created_service_2.Spec.ClusterIP)) {
+		t.Errorf("Unexpected ClusterIP: %s", created_service_2.Spec.ClusterIP)
 	}
 }
 
@@ -649,8 +648,8 @@ func TestServiceRegistryIPUpdate(t *testing.T) {
 	if created_service.Spec.Ports[0].Port != 6502 {
 		t.Errorf("Expected port 6502, but got %v", created_service.Spec.Ports[0].Port)
 	}
-	if !makeIPNet(t).Contains(net.ParseIP(created_service.Spec.PortalIP)) {
-		t.Errorf("Unexpected PortalIP: %s", created_service.Spec.PortalIP)
+	if !makeIPNet(t).Contains(net.ParseIP(created_service.Spec.ClusterIP)) {
+		t.Errorf("Unexpected ClusterIP: %s", created_service.Spec.ClusterIP)
 	}
 
 	update := deepCloneService(created_service)
@@ -664,7 +663,7 @@ func TestServiceRegistryIPUpdate(t *testing.T) {
 
 	update = deepCloneService(created_service)
 	update.Spec.Ports[0].Port = 6503
-	update.Spec.PortalIP = "1.2.3.76" // error
+	update.Spec.ClusterIP = "1.2.3.76" // error
 
 	_, _, err := rest.Update(ctx, update)
 	if err == nil || !errors.IsInvalid(err) {
@@ -693,8 +692,8 @@ func TestServiceRegistryIPLoadBalancer(t *testing.T) {
 	if created_service.Spec.Ports[0].Port != 6502 {
 		t.Errorf("Expected port 6502, but got %v", created_service.Spec.Ports[0].Port)
 	}
-	if !makeIPNet(t).Contains(net.ParseIP(created_service.Spec.PortalIP)) {
-		t.Errorf("Unexpected PortalIP: %s", created_service.Spec.PortalIP)
+	if !makeIPNet(t).Contains(net.ParseIP(created_service.Spec.ClusterIP)) {
+		t.Errorf("Unexpected ClusterIP: %s", created_service.Spec.ClusterIP)
 	}
 
 	update := deepCloneService(created_service)
@@ -751,7 +750,7 @@ func TestCreate(t *testing.T) {
 		&api.Service{
 			Spec: api.ServiceSpec{
 				Selector:        map[string]string{"bar": "baz"},
-				PortalIP:        "None",
+				ClusterIP:       "None",
 				SessionAffinity: "None",
 				Type:            api.ServiceTypeClusterIP,
 				Ports: []api.ServicePort{{
@@ -768,7 +767,7 @@ func TestCreate(t *testing.T) {
 		&api.Service{
 			Spec: api.ServiceSpec{
 				Selector:        map[string]string{"bar": "baz"},
-				PortalIP:        "invalid",
+				ClusterIP:       "invalid",
 				SessionAffinity: "None",
 				Type:            api.ServiceTypeClusterIP,
 				Ports: []api.ServicePort{{

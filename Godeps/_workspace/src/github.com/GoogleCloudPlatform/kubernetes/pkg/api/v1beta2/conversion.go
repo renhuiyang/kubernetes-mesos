@@ -178,8 +178,8 @@ func addConversionFuncs() {
 			if err := s.Convert(&in.Spec, &out.DesiredState.Manifest, 0); err != nil {
 				return err
 			}
-			out.DesiredState.Host = in.Spec.Host
-			out.CurrentState.Host = in.Spec.Host
+			out.DesiredState.Host = in.Spec.NodeName
+			out.CurrentState.Host = in.Spec.NodeName
 			out.ServiceAccount = in.Spec.ServiceAccount
 			if err := s.Convert(&in.Status, &out.CurrentState, 0); err != nil {
 				return err
@@ -203,7 +203,7 @@ func addConversionFuncs() {
 				return err
 			}
 			out.Spec.ServiceAccount = in.ServiceAccount
-			out.Spec.Host = in.DesiredState.Host
+			out.Spec.NodeName = in.DesiredState.Host
 			if err := s.Convert(&in.CurrentState, &out.Status, 0); err != nil {
 				return err
 			}
@@ -283,7 +283,7 @@ func addConversionFuncs() {
 			if err := s.Convert(&in.Spec, &out.DesiredState.Manifest, 0); err != nil {
 				return err
 			}
-			out.DesiredState.Host = in.Spec.Host
+			out.DesiredState.Host = in.Spec.NodeName
 			out.ServiceAccount = in.Spec.ServiceAccount
 			if err := s.Convert(&in.Spec.NodeSelector, &out.NodeSelector, 0); err != nil {
 				return err
@@ -300,7 +300,7 @@ func addConversionFuncs() {
 			if err := s.Convert(&in.DesiredState.Manifest, &out.Spec, 0); err != nil {
 				return err
 			}
-			out.Spec.Host = in.DesiredState.Host
+			out.Spec.NodeName = in.DesiredState.Host
 			out.Spec.ServiceAccount = in.ServiceAccount
 			if err := s.Convert(&in.NodeSelector, &out.Spec.NodeSelector, 0); err != nil {
 				return err
@@ -660,14 +660,14 @@ func addConversionFuncs() {
 			if err := s.Convert(&in, &out.Manifest, 0); err != nil {
 				return err
 			}
-			out.Host = in.Host
+			out.Host = in.NodeName
 			return nil
 		},
 		func(in *PodState, out *api.PodSpec, s conversion.Scope) error {
 			if err := s.Convert(&in.Manifest, &out, 0); err != nil {
 				return err
 			}
-			out.Host = in.Host
+			out.NodeName = in.Host
 			return nil
 		},
 		func(in *api.Service, out *Service, s conversion.Scope) error {
@@ -704,7 +704,7 @@ func addConversionFuncs() {
 				return err
 			}
 			out.PublicIPs = in.Spec.DeprecatedPublicIPs
-			out.PortalIP = in.Spec.PortalIP
+			out.PortalIP = in.Spec.ClusterIP
 			if err := s.Convert(&in.Spec.SessionAffinity, &out.SessionAffinity, 0); err != nil {
 				return err
 			}
@@ -756,7 +756,7 @@ func addConversionFuncs() {
 				return err
 			}
 			out.Spec.DeprecatedPublicIPs = in.PublicIPs
-			out.Spec.PortalIP = in.PortalIP
+			out.Spec.ClusterIP = in.PortalIP
 			if err := s.Convert(&in.SessionAffinity, &out.Spec.SessionAffinity, 0); err != nil {
 				return err
 			}
@@ -810,6 +810,7 @@ func addConversionFuncs() {
 			}
 			out.PodCIDR = in.Spec.PodCIDR
 			out.ExternalID = in.Spec.ExternalID
+			out.ProviderID = in.Spec.ProviderID
 			out.Unschedulable = in.Spec.Unschedulable
 			return s.Convert(&in.Status.Capacity, &out.NodeResources.Capacity, 0)
 		},
@@ -842,6 +843,7 @@ func addConversionFuncs() {
 			}
 			out.Spec.PodCIDR = in.PodCIDR
 			out.Spec.ExternalID = in.ExternalID
+			out.Spec.ProviderID = in.ProviderID
 			out.Spec.Unschedulable = in.Unschedulable
 			return s.Convert(&in.NodeResources.Capacity, &out.Status.Capacity, 0)
 		},

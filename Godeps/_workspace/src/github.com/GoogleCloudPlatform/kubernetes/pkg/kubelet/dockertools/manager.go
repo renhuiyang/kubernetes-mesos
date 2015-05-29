@@ -590,7 +590,7 @@ func (dm *DockerManager) runContainer(
 		},
 	}
 
-	setEntrypointAndCommand(container, &dockerOpts)
+	setEntrypointAndCommand(container, opts, &dockerOpts)
 
 	glog.V(3).Infof("Container %v/%v/%v: setting entrypoint \"%v\" and command \"%v\"", pod.Namespace, pod.Name, container.Name, dockerOpts.Config.Entrypoint, dockerOpts.Config.Cmd)
 
@@ -661,13 +661,11 @@ func (dm *DockerManager) runContainer(
 	return dockerContainer.ID, nil
 }
 
-func setEntrypointAndCommand(container *api.Container, opts *docker.CreateContainerOptions) {
-	if len(container.Command) != 0 {
-		opts.Config.Entrypoint = container.Command
-	}
-	if len(container.Args) != 0 {
-		opts.Config.Cmd = container.Args
-	}
+func setEntrypointAndCommand(container *api.Container, opts *kubecontainer.RunContainerOptions, dockerOpts *docker.CreateContainerOptions) {
+	command, args := kubecontainer.ExpandContainerCommandAndArgs(container, opts.Envs)
+
+	dockerOpts.Config.Entrypoint = command
+	dockerOpts.Config.Cmd = args
 }
 
 // A helper function to get the KubeletContainerName and hash from a docker
@@ -1023,7 +1021,7 @@ func (dm *DockerManager) ExecInContainer(containerId string, cmd []string, stdin
 	} else {
 		if stdin != nil {
 			// Use an os.Pipe here as it returns true *os.File objects.
-			// This way, if you run 'kubectl exec -p <pod> -i bash' (no tty) and type 'exit',
+			// This way, if you run 'kubectl exec <pod> -i bash' (no tty) and type 'exit',
 			// the call below to command.Run() can unblock because its Stdin is the read half
 			// of the pipe.
 			r, w, err := os.Pipe()

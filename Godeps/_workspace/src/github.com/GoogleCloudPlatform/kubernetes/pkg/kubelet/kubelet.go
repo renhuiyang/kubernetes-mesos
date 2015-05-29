@@ -58,6 +58,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/volume"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
+	"github.com/GoogleCloudPlatform/kubernetes/third_party/golang/expansion"
 	"github.com/golang/glog"
 
 	cadvisorApi "github.com/google/cadvisor/info/v1"
@@ -699,11 +700,19 @@ func (kl *Kubelet) initialNodeStatus() (*api.Node, error) {
 		}
 		// TODO(roberthbailey): Can we do this without having credentials to talk
 		// to the cloud provider?
-		instanceID, err := instances.ExternalID(kl.hostname)
+		// TODO: ExternalID is deprecated, we'll have to drop this code
+		externalID, err := instances.ExternalID(kl.hostname)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get instance ID from cloud provider: %v", err)
+			return nil, fmt.Errorf("failed to get external ID from cloud provider: %v", err)
 		}
-		node.Spec.ExternalID = instanceID
+		node.Spec.ExternalID = externalID
+		// TODO: We can't assume that the node has credentials to talk to the
+		// cloudprovider from arbitrary nodes. At most, we should talk to a
+		// local metadata server here.
+		node.Spec.ProviderID, err = cloudprovider.GetInstanceProviderID(kl.cloud, kl.hostname)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		node.Spec.ExternalID = kl.hostname
 	}
@@ -876,7 +885,7 @@ func (kl *Kubelet) getServiceEnvVarMap(ns string) (map[string]string, error) {
 
 	// project the services in namespace ns onto the master services
 	for _, service := range services.Items {
-		// ignore services where PortalIP is "None" or empty
+		// ignore services where ClusterIP is "None" or empty
 		if !api.IsServiceIPSet(&service) {
 			continue
 		}
@@ -926,20 +935,40 @@ func (kl *Kubelet) makeEnvironmentVariables(pod *api.Pod, container *api.Contain
 		return result, err
 	}
 
-	for _, value := range container.Env {
+	// Determine the final values of variables:
+	//
+	// 1.  Determine the final value of each variable:
+	//     a.  If the variable's Value is set, expand the `$(var)` references to other
+	//         variables in the .Value field; the sources of variables are the declared
+	//         variables of the container and the service environment variables
+	//     b.  If a source is defined for an environment variable, resolve the source
+	// 2.  Create the container's environment in the order variables are declared
+	// 3.  Add remaining service environment vars
+
+	tmpEnv := make(map[string]string)
+	mappingFunc := expansion.MappingFuncFor(tmpEnv, serviceEnv)
+	for _, envVar := range container.Env {
 		// Accesses apiserver+Pods.
 		// So, the master may set service env vars, or kubelet may.  In case both are doing
 		// it, we delete the key from the kubelet-generated ones so we don't have duplicate
 		// env vars.
 		// TODO: remove this net line once all platforms use apiserver+Pods.
-		delete(serviceEnv, value.Name)
+		delete(serviceEnv, envVar.Name)
 
-		runtimeValue, err := kl.runtimeEnvVarValue(value, pod)
-		if err != nil {
-			return result, err
+		runtimeVal := envVar.Value
+		if runtimeVal != "" {
+			// Step 1a: expand variable references
+			runtimeVal = expansion.Expand(runtimeVal, mappingFunc)
+		} else if envVar.ValueFrom != nil && envVar.ValueFrom.FieldRef != nil {
+			// Step 1b: resolve alternate env var sources
+			runtimeVal, err = kl.podFieldSelectorRuntimeValue(envVar.ValueFrom.FieldRef, pod)
+			if err != nil {
+				return result, err
+			}
 		}
 
-		result = append(result, kubecontainer.EnvVar{Name: value.Name, Value: runtimeValue})
+		tmpEnv[envVar.Name] = runtimeVal
+		result = append(result, kubecontainer.EnvVar{Name: envVar.Name, Value: tmpEnv[envVar.Name]})
 	}
 
 	// Append remaining service env vars.
@@ -947,24 +976,6 @@ func (kl *Kubelet) makeEnvironmentVariables(pod *api.Pod, container *api.Contain
 		result = append(result, kubecontainer.EnvVar{Name: k, Value: v})
 	}
 	return result, nil
-}
-
-// runtimeEnvVarValue determines the value that an env var should take when a container
-// is started.  If the value of the env var is the empty string, the source of the env var
-// is resolved, if one is specified.
-//
-// TODO: preliminary factoring; make better
-func (kl *Kubelet) runtimeEnvVarValue(envVar api.EnvVar, pod *api.Pod) (string, error) {
-	runtimeVal := envVar.Value
-	if runtimeVal != "" {
-		return runtimeVal, nil
-	}
-
-	if envVar.ValueFrom != nil && envVar.ValueFrom.FieldRef != nil {
-		return kl.podFieldSelectorRuntimeValue(envVar.ValueFrom.FieldRef, pod)
-	}
-
-	return runtimeVal, nil
 }
 
 func (kl *Kubelet) podFieldSelectorRuntimeValue(fs *api.ObjectFieldSelector, pod *api.Pod) (string, error) {
@@ -1836,6 +1847,7 @@ func (kl *Kubelet) setNodeStatus(node *api.Node) error {
 		node.Status.Capacity = api.ResourceList{
 			api.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
 			api.ResourceMemory: resource.MustParse("0Gi"),
+			api.ResourcePods:   *resource.NewQuantity(int64(kl.pods), resource.DecimalSI),
 		}
 		glog.Errorf("Error getting machine info: %v", err)
 	} else {

@@ -36,15 +36,15 @@ import (
 	kutil "github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
 
-	log "github.com/golang/glog"
-	mesos "github.com/mesos/mesos-go/mesosproto"
-	util "github.com/mesos/mesos-go/mesosutil"
-	bindings "github.com/mesos/mesos-go/scheduler"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/messages"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/queue"
 	schedcfg "github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/config"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/ha"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/podtask"
+	log "github.com/golang/glog"
+	mesos "github.com/mesos/mesos-go/mesosproto"
+	util "github.com/mesos/mesos-go/mesosutil"
+	bindings "github.com/mesos/mesos-go/scheduler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -67,7 +67,7 @@ func NewTestServer(t *testing.T, namespace string, pods *api.PodList) *TestServe
 		w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), pods)))
 	})
 
-	podsPrefix := testapi.ResourcePath("pods", namespace, "")+"/"
+	podsPrefix := testapi.ResourcePath("pods", namespace, "") + "/"
 	mux.HandleFunc(podsPrefix, func(w http.ResponseWriter, r *http.Request) {
 		name := r.URL.Path[len(podsPrefix):]
 
@@ -205,8 +205,8 @@ func NewTestOffer(i int) *mesos.Offer {
 
 // Add assertions to reason about event streams
 type Event struct {
-	Object runtime.Object
-	Reason string
+	Object  runtime.Object
+	Reason  string
 	Message string
 }
 
@@ -218,13 +218,13 @@ type EventAssertions struct {
 
 type EventObserver struct {
 	recorder record.EventRecorder
-	fifo chan Event
+	fifo     chan Event
 }
 
 func NewEventObserver(recorder record.EventRecorder) *EventObserver {
 	return &EventObserver{
 		recorder: recorder,
-		fifo: make(chan Event, 1000),
+		fifo:     make(chan Event, 1000),
 	}
 }
 func (o *EventObserver) Event(object runtime.Object, reason, message string) {
@@ -259,7 +259,7 @@ func (a *EventAssertions) Event(observer *EventObserver, pred EventPredicate, ms
 	// watch events
 	result := make(chan bool)
 	stop := make(chan struct{})
-	go func () {
+	go func() {
 		for {
 			select {
 			case e, ok := <-observer.fifo:
@@ -582,13 +582,13 @@ func TestPlugin_LifeCycle(t *testing.T) {
 
 	// 3. with pod still on the apiserver, bound i.e. host!=""
 	pod = startPod(offers1)
-	pod.Spec.Host = *offers1[0].Hostname
+	pod.Spec.NodeName = *offers1[0].Hostname
 	podListWatch.Modify(pod, false) // not notifying the watchers
 	failPodFromExecutor(launchTasks_taskInfos[0])
 
 	// 4. with pod still on the apiserver, bound i.e. host!="", notified via ListWatch
 	pod = startPod(offers1)
-	pod.Spec.Host = *offers1[0].Hostname
+	pod.Spec.NodeName = *offers1[0].Hostname
 	podListWatch.Modify(pod, true) // notifying the watchers
 	time.Sleep(time.Second / 2)
 	failPodFromExecutor(launchTasks_taskInfos[0])
