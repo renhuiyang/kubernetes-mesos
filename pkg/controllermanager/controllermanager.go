@@ -64,7 +64,7 @@ func NewCMServer() *CMServer {
 	s := &CMServer{
 		CMServer: app.NewCMServer(),
 	}
-	s.CloudProvider = mesos.PluginName
+	s.CloudProvider = mesos.ProviderName
 	s.UseHostPortEndpoints = true
 	return s
 }
@@ -118,7 +118,7 @@ func (s *CMServer) Run(_ []string) error {
 	go controllerManager.Run(s.ConcurrentRCSyncs, util.NeverStop)
 
 	//TODO(jdef) should eventually support more cloud providers here
-	if s.CloudProvider != mesos.PluginName {
+	if s.CloudProvider != mesos.ProviderName {
 		glog.Fatalf("Unsupported cloud provider: %v", s.CloudProvider)
 	}
 	cloud := cloudprovider.InitCloudProvider(s.CloudProvider, s.CloudConfigFile)
