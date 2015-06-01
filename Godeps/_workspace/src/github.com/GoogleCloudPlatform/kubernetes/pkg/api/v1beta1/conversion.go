@@ -474,13 +474,13 @@ func addConversionFuncs() {
 			if err := s.Convert(&in.Selector, &out.ReplicaSelector, 0); err != nil {
 				return err
 			}
-			if in.TemplateRef != nil && in.Template == nil {
-				return &api.ConversionError{
-					In:      in,
-					Out:     out,
-					Message: "objects with a template ref cannot be converted to older objects, must populate template",
-				}
-			}
+			//if in.TemplateRef != nil && in.Template == nil {
+			//	return &api.ConversionError{
+			//		In:      in,
+			//		Out:     out,
+			//		Message: "objects with a template ref cannot be converted to older objects, must populate template",
+			//	}
+			//}
 			if in.Template != nil {
 				if err := s.Convert(in.Template, &out.PodTemplate, 0); err != nil {
 					return err
@@ -1630,6 +1630,30 @@ func addConversionFuncs() {
 		},
 		func(in *SecretVolumeSource, out *api.SecretVolumeSource, s conversion.Scope) error {
 			out.SecretName = in.Target.ID
+			return nil
+		},
+		func(in *api.ContainerState, out *ContainerState, s conversion.Scope) error {
+			if err := s.Convert(&in.Waiting, &out.Waiting, 0); err != nil {
+				return err
+			}
+			if err := s.Convert(&in.Running, &out.Running, 0); err != nil {
+				return err
+			}
+			if err := s.Convert(&in.Terminated, &out.Termination, 0); err != nil {
+				return err
+			}
+			return nil
+		},
+		func(in *ContainerState, out *api.ContainerState, s conversion.Scope) error {
+			if err := s.Convert(&in.Waiting, &out.Waiting, 0); err != nil {
+				return err
+			}
+			if err := s.Convert(&in.Running, &out.Running, 0); err != nil {
+				return err
+			}
+			if err := s.Convert(&in.Termination, &out.Terminated, 0); err != nil {
+				return err
+			}
 			return nil
 		},
 	)

@@ -144,37 +144,6 @@ func convert_api_ContainerPort_To_v1beta3_ContainerPort(in *api.ContainerPort, o
 	return nil
 }
 
-func convert_api_ContainerState_To_v1beta3_ContainerState(in *api.ContainerState, out *ContainerState, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*api.ContainerState))(in)
-	}
-	if in.Waiting != nil {
-		out.Waiting = new(ContainerStateWaiting)
-		if err := convert_api_ContainerStateWaiting_To_v1beta3_ContainerStateWaiting(in.Waiting, out.Waiting, s); err != nil {
-			return err
-		}
-	} else {
-		out.Waiting = nil
-	}
-	if in.Running != nil {
-		out.Running = new(ContainerStateRunning)
-		if err := convert_api_ContainerStateRunning_To_v1beta3_ContainerStateRunning(in.Running, out.Running, s); err != nil {
-			return err
-		}
-	} else {
-		out.Running = nil
-	}
-	if in.Termination != nil {
-		out.Termination = new(ContainerStateTerminated)
-		if err := convert_api_ContainerStateTerminated_To_v1beta3_ContainerStateTerminated(in.Termination, out.Termination, s); err != nil {
-			return err
-		}
-	} else {
-		out.Termination = nil
-	}
-	return nil
-}
-
 func convert_api_ContainerStateRunning_To_v1beta3_ContainerStateRunning(in *api.ContainerStateRunning, out *ContainerStateRunning, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*api.ContainerStateRunning))(in)
@@ -182,24 +151,6 @@ func convert_api_ContainerStateRunning_To_v1beta3_ContainerStateRunning(in *api.
 	if err := s.Convert(&in.StartedAt, &out.StartedAt, 0); err != nil {
 		return err
 	}
-	return nil
-}
-
-func convert_api_ContainerStateTerminated_To_v1beta3_ContainerStateTerminated(in *api.ContainerStateTerminated, out *ContainerStateTerminated, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*api.ContainerStateTerminated))(in)
-	}
-	out.ExitCode = in.ExitCode
-	out.Signal = in.Signal
-	out.Reason = in.Reason
-	out.Message = in.Message
-	if err := s.Convert(&in.StartedAt, &out.StartedAt, 0); err != nil {
-		return err
-	}
-	if err := s.Convert(&in.FinishedAt, &out.FinishedAt, 0); err != nil {
-		return err
-	}
-	out.ContainerID = in.ContainerID
 	return nil
 }
 
@@ -1593,14 +1544,6 @@ func convert_api_ReplicationControllerSpec_To_v1beta3_ReplicationControllerSpec(
 	} else {
 		out.Selector = nil
 	}
-	if in.TemplateRef != nil {
-		out.TemplateRef = new(ObjectReference)
-		if err := convert_api_ObjectReference_To_v1beta3_ObjectReference(in.TemplateRef, out.TemplateRef, s); err != nil {
-			return err
-		}
-	} else {
-		out.TemplateRef = nil
-	}
 	if in.Template != nil {
 		out.Template = new(PodTemplateSpec)
 		if err := convert_api_PodTemplateSpec_To_v1beta3_PodTemplateSpec(in.Template, out.Template, s); err != nil {
@@ -2290,37 +2233,6 @@ func convert_v1beta3_ContainerPort_To_api_ContainerPort(in *ContainerPort, out *
 	return nil
 }
 
-func convert_v1beta3_ContainerState_To_api_ContainerState(in *ContainerState, out *api.ContainerState, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*ContainerState))(in)
-	}
-	if in.Waiting != nil {
-		out.Waiting = new(api.ContainerStateWaiting)
-		if err := convert_v1beta3_ContainerStateWaiting_To_api_ContainerStateWaiting(in.Waiting, out.Waiting, s); err != nil {
-			return err
-		}
-	} else {
-		out.Waiting = nil
-	}
-	if in.Running != nil {
-		out.Running = new(api.ContainerStateRunning)
-		if err := convert_v1beta3_ContainerStateRunning_To_api_ContainerStateRunning(in.Running, out.Running, s); err != nil {
-			return err
-		}
-	} else {
-		out.Running = nil
-	}
-	if in.Termination != nil {
-		out.Termination = new(api.ContainerStateTerminated)
-		if err := convert_v1beta3_ContainerStateTerminated_To_api_ContainerStateTerminated(in.Termination, out.Termination, s); err != nil {
-			return err
-		}
-	} else {
-		out.Termination = nil
-	}
-	return nil
-}
-
 func convert_v1beta3_ContainerStateRunning_To_api_ContainerStateRunning(in *ContainerStateRunning, out *api.ContainerStateRunning, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*ContainerStateRunning))(in)
@@ -2328,24 +2240,6 @@ func convert_v1beta3_ContainerStateRunning_To_api_ContainerStateRunning(in *Cont
 	if err := s.Convert(&in.StartedAt, &out.StartedAt, 0); err != nil {
 		return err
 	}
-	return nil
-}
-
-func convert_v1beta3_ContainerStateTerminated_To_api_ContainerStateTerminated(in *ContainerStateTerminated, out *api.ContainerStateTerminated, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*ContainerStateTerminated))(in)
-	}
-	out.ExitCode = in.ExitCode
-	out.Signal = in.Signal
-	out.Reason = in.Reason
-	out.Message = in.Message
-	if err := s.Convert(&in.StartedAt, &out.StartedAt, 0); err != nil {
-		return err
-	}
-	if err := s.Convert(&in.FinishedAt, &out.FinishedAt, 0); err != nil {
-		return err
-	}
-	out.ContainerID = in.ContainerID
 	return nil
 }
 
@@ -3739,14 +3633,6 @@ func convert_v1beta3_ReplicationControllerSpec_To_api_ReplicationControllerSpec(
 	} else {
 		out.Selector = nil
 	}
-	if in.TemplateRef != nil {
-		out.TemplateRef = new(api.ObjectReference)
-		if err := convert_v1beta3_ObjectReference_To_api_ObjectReference(in.TemplateRef, out.TemplateRef, s); err != nil {
-			return err
-		}
-	} else {
-		out.TemplateRef = nil
-	}
 	if in.Template != nil {
 		out.Template = new(api.PodTemplateSpec)
 		if err := convert_v1beta3_PodTemplateSpec_To_api_PodTemplateSpec(in.Template, out.Template, s); err != nil {
@@ -4327,9 +4213,7 @@ func init() {
 		convert_api_ComponentStatus_To_v1beta3_ComponentStatus,
 		convert_api_ContainerPort_To_v1beta3_ContainerPort,
 		convert_api_ContainerStateRunning_To_v1beta3_ContainerStateRunning,
-		convert_api_ContainerStateTerminated_To_v1beta3_ContainerStateTerminated,
 		convert_api_ContainerStateWaiting_To_v1beta3_ContainerStateWaiting,
-		convert_api_ContainerState_To_v1beta3_ContainerState,
 		convert_api_ContainerStatus_To_v1beta3_ContainerStatus,
 		convert_api_DeleteOptions_To_v1beta3_DeleteOptions,
 		convert_api_EmptyDirVolumeSource_To_v1beta3_EmptyDirVolumeSource,
@@ -4438,9 +4322,7 @@ func init() {
 		convert_v1beta3_ComponentStatus_To_api_ComponentStatus,
 		convert_v1beta3_ContainerPort_To_api_ContainerPort,
 		convert_v1beta3_ContainerStateRunning_To_api_ContainerStateRunning,
-		convert_v1beta3_ContainerStateTerminated_To_api_ContainerStateTerminated,
 		convert_v1beta3_ContainerStateWaiting_To_api_ContainerStateWaiting,
-		convert_v1beta3_ContainerState_To_api_ContainerState,
 		convert_v1beta3_ContainerStatus_To_api_ContainerStatus,
 		convert_v1beta3_DeleteOptions_To_api_DeleteOptions,
 		convert_v1beta3_EmptyDirVolumeSource_To_api_EmptyDirVolumeSource,

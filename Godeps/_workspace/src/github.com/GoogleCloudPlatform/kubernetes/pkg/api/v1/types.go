@@ -659,8 +659,8 @@ type Container struct {
 	// Required: This must be a DNS_LABEL.  Each container in a pod must
 	// have a unique name.
 	Name string `json:"name" description:"name of the container; must be a DNS_LABEL and unique within the pod; cannot be updated"`
-	// Required.
-	Image string `json:"image" description:"Docker image name"`
+	// Optional.
+	Image string `json:"image,omitempty" description:"Docker image name"`
 	// Optional: The docker image's entrypoint is used if this is not provided; cannot be updated.
 	// Variable references $(VAR_NAME) are expanded using the container's environment.  If a variable
 	// cannot be resolved, the reference in the input string will be unchanged.  The $(VAR_NAME) syntax
@@ -750,9 +750,9 @@ type ContainerStateTerminated struct {
 // Only one of its members may be specified.
 // If none of them is specified, the default one is ContainerStateWaiting.
 type ContainerState struct {
-	Waiting     *ContainerStateWaiting    `json:"waiting,omitempty" description:"details about a waiting container"`
-	Running     *ContainerStateRunning    `json:"running,omitempty" description:"details about a running container"`
-	Termination *ContainerStateTerminated `json:"termination,omitempty" description:"details about a terminated container"`
+	Waiting    *ContainerStateWaiting    `json:"waiting,omitempty" description:"details about a waiting container"`
+	Running    *ContainerStateRunning    `json:"running,omitempty" description:"details about a running container"`
+	Terminated *ContainerStateTerminated `json:"terminated,omitempty" description:"details about a terminated container"`
 }
 
 type ContainerStatus struct {
@@ -962,7 +962,7 @@ type ReplicationControllerSpec struct {
 
 	// TemplateRef is a reference to an object that describes the pod that will be created if
 	// insufficient replicas are detected.
-	TemplateRef *ObjectReference `json:"templateRef,omitempty" description:"reference to an object that describes the pod that will be created if insufficient replicas are detected"`
+	//TemplateRef *ObjectReference `json:"templateRef,omitempty" description:"reference to an object that describes the pod that will be created if insufficient replicas are detected"`
 
 	// Template is the object that describes the pod that will be created if
 	// insufficient replicas are detected. This takes precedence over a

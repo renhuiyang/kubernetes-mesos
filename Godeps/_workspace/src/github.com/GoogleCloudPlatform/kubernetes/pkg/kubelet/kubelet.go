@@ -139,6 +139,7 @@ func NewMainKubelet(
 	containerRuntime string,
 	mounter mount.Interface,
 	dockerDaemonContainer string,
+	systemContainer string,
 	configureCBR0 bool,
 	pods int) (*Kubelet, error) {
 	if rootDirectory == "" {
@@ -146,6 +147,9 @@ func NewMainKubelet(
 	}
 	if resyncInterval <= 0 {
 		return nil, fmt.Errorf("invalid sync frequency %d", resyncInterval)
+	}
+	if systemContainer != "" && cgroupRoot == "" {
+		return nil, fmt.Errorf("invalid configuration: system container was specified and cgroup root was not specified")
 	}
 	dockerClient = dockertools.NewInstrumentedDockerInterface(dockerClient)
 
@@ -295,7 +299,9 @@ func NewMainKubelet(
 		return nil, fmt.Errorf("unsupported container runtime %q specified", containerRuntime)
 	}
 
-	containerManager, err := newContainerManager(dockerDaemonContainer)
+	// Setup container manager, can fail if the devices hierarchy is not mounted
+	// (it is required by Docker however).
+	containerManager, err := newContainerManager(dockerDaemonContainer, systemContainer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create the Container Manager: %v", err)
 	}
@@ -1662,10 +1668,10 @@ func (kl *Kubelet) validateContainerStatus(podStatus *api.PodStatus, containerNa
 		return "", fmt.Errorf("container %q not found in pod", containerName)
 	}
 	if previous {
-		if cStatus.LastTerminationState.Termination == nil {
+		if cStatus.LastTerminationState.Terminated == nil {
 			return "", fmt.Errorf("previous terminated container %q not found in pod", containerName)
 		}
-		cID = cStatus.LastTerminationState.Termination.ContainerID
+		cID = cStatus.LastTerminationState.Terminated.ContainerID
 	} else {
 		if cStatus.State.Waiting != nil {
 			return "", fmt.Errorf("container %q is in waiting state.", containerName)
@@ -1977,9 +1983,9 @@ func getPhase(spec *api.PodSpec, info []api.ContainerStatus) api.PodPhase {
 		if containerStatus, ok := api.GetContainerStatus(info, container.Name); ok {
 			if containerStatus.State.Running != nil {
 				running++
-			} else if containerStatus.State.Termination != nil {
+			} else if containerStatus.State.Terminated != nil {
 				stopped++
-				if containerStatus.State.Termination.ExitCode == 0 {
+				if containerStatus.State.Terminated.ExitCode == 0 {
 					succeeded++
 				} else {
 					failed++

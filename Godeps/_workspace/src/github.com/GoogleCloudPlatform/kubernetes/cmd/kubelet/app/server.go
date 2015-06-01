@@ -108,6 +108,7 @@ type KubeletServer struct {
 	CgroupRoot                     string
 	ContainerRuntime               string
 	DockerDaemonContainer          string
+	SystemContainer                string
 	ConfigureCBR0                  bool
 	MaxPods                        int
 
@@ -170,6 +171,7 @@ func NewKubeletServer() *KubeletServer {
 		CgroupRoot:                  "",
 		ContainerRuntime:            "docker",
 		DockerDaemonContainer:       "/docker-daemon",
+		SystemContainer:             "",
 		ConfigureCBR0:               false,
 	}
 }
@@ -228,7 +230,7 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&s.ResourceContainer, "resource-container", s.ResourceContainer, "Absolute name of the resource-only container to create and run the Kubelet in (Default: /kubelet).")
 	fs.StringVar(&s.CgroupRoot, "cgroup_root", s.CgroupRoot, "Optional root cgroup to use for pods. This is handled by the container runtime on a best effort basis. Default: '', which means use the container runtime default.")
 	fs.StringVar(&s.ContainerRuntime, "container_runtime", s.ContainerRuntime, "The container runtime to use. Possible values: 'docker', 'rkt'. Default: 'docker'.")
-	fs.StringVar(&s.DockerDaemonContainer, "docker-daemon-container", s.DockerDaemonContainer, "Optional resource-only container in which to place the Docker Daemon. Empty for no container (Default: /docker-daemon).")
+	fs.StringVar(&s.SystemContainer, "system-container", s.SystemContainer, "Optional resource-only container in which to place all non-kernel processes that are not already in a container. Empty for no container. Rolling back the flag requires a reboot. (Default: \"\").")
 	fs.BoolVar(&s.ConfigureCBR0, "configure-cbr0", s.ConfigureCBR0, "If true, kubelet will configure cbr0 based on Node.Spec.PodCIDR.")
 	fs.IntVar(&s.MaxPods, "max-pods", 100, "Number of Pods that can run on this Kubelet.")
 
@@ -279,25 +281,10 @@ func (s *KubeletServer) Run(_ []string) error {
 		return err
 	}
 
-	if s.TLSCertFile == "" && s.TLSPrivateKeyFile == "" {
-		s.TLSCertFile = path.Join(s.CertDirectory, "kubelet.crt")
-		s.TLSPrivateKeyFile = path.Join(s.CertDirectory, "kubelet.key")
-		if err := util.GenerateSelfSignedCert(util.GetHostname(s.HostnameOverride), s.TLSCertFile, s.TLSPrivateKeyFile); err != nil {
-			return fmt.Errorf("unable to generate self signed cert: %v", err)
-		}
-		glog.V(4).Infof("Using self-signed cert (%s, %s)", s.TLSCertFile, s.TLSPrivateKeyFile)
+	tlsOptions, err := s.InitializeTLS()
+	if err != nil {
+		return err
 	}
-	tlsOptions := &kubelet.TLSOptions{
-		Config: &tls.Config{
-			// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability).
-			MinVersion: tls.VersionTLS10,
-			// Populate PeerCertificates in requests, but don't yet reject connections without certificates.
-			ClientAuth: tls.RequestClientCert,
-		},
-		CertFile: s.TLSCertFile,
-		KeyFile:  s.TLSPrivateKeyFile,
-	}
-
 	mounter := mount.New()
 	if s.Containerized {
 		glog.V(2).Info("Running kubelet in containerized mode (experimental)")
@@ -347,6 +334,7 @@ func (s *KubeletServer) Run(_ []string) error {
 		ContainerRuntime:          s.ContainerRuntime,
 		Mounter:                   mounter,
 		DockerDaemonContainer:     s.DockerDaemonContainer,
+		SystemContainer:           s.SystemContainer,
 		ConfigureCBR0:             s.ConfigureCBR0,
 		MaxPods:                   s.MaxPods,
 	}
@@ -371,6 +359,30 @@ func (s *KubeletServer) Run(_ []string) error {
 
 	// run forever
 	select {}
+}
+
+// InitializeTLS checks for a configured TLSCertFile and TLSPrivateKeyFile: if unspecified a new self-signed
+// certificate and key file are generated. Returns a configured kubelet.TLSOptions object.
+func (s *KubeletServer) InitializeTLS() (*kubelet.TLSOptions, error) {
+	if s.TLSCertFile == "" && s.TLSPrivateKeyFile == "" {
+		s.TLSCertFile = path.Join(s.CertDirectory, "kubelet.crt")
+		s.TLSPrivateKeyFile = path.Join(s.CertDirectory, "kubelet.key")
+		if err := util.GenerateSelfSignedCert(util.GetHostname(s.HostnameOverride), s.TLSCertFile, s.TLSPrivateKeyFile); err != nil {
+			return nil, fmt.Errorf("unable to generate self signed cert: %v", err)
+		}
+		glog.V(4).Infof("Using self-signed cert (%s, %s)", s.TLSCertFile, s.TLSPrivateKeyFile)
+	}
+	tlsOptions := &kubelet.TLSOptions{
+		Config: &tls.Config{
+			// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability).
+			MinVersion: tls.VersionTLS10,
+			// Populate PeerCertificates in requests, but don't yet reject connections without certificates.
+			ClientAuth: tls.RequestClientCert,
+		},
+		CertFile: s.TLSCertFile,
+		KeyFile:  s.TLSPrivateKeyFile,
+	}
+	return tlsOptions, nil
 }
 
 func (s *KubeletServer) authPathClientConfig(useDefaults bool) (*client.Config, error) {
@@ -513,6 +525,7 @@ func SimpleKubelet(client *client.Client,
 		ContainerRuntime:          "docker",
 		Mounter:                   mount.New(),
 		DockerDaemonContainer:     "/docker-daemon",
+		SystemContainer:           "",
 		MaxPods:                   32,
 	}
 	return &kcfg
@@ -648,6 +661,7 @@ type KubeletConfig struct {
 	ContainerRuntime               string
 	Mounter                        mount.Interface
 	DockerDaemonContainer          string
+	SystemContainer                string
 	ConfigureCBR0                  bool
 	MaxPods                        int
 }
@@ -701,6 +715,7 @@ func createAndInitKubelet(kc *KubeletConfig) (k KubeletBootstrap, pc *config.Pod
 		kc.ContainerRuntime,
 		kc.Mounter,
 		kc.DockerDaemonContainer,
+		kc.SystemContainer,
 		kc.ConfigureCBR0,
 		kc.MaxPods)
 

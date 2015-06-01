@@ -740,9 +740,9 @@ type ContainerStateTerminated struct {
 // Only one of its members may be specified.
 // If none of them is specified, the default one is ContainerStateWaiting.
 type ContainerState struct {
-	Waiting     *ContainerStateWaiting    `json:"waiting,omitempty"`
-	Running     *ContainerStateRunning    `json:"running,omitempty"`
-	Termination *ContainerStateTerminated `json:"termination,omitempty"`
+	Waiting    *ContainerStateWaiting    `json:"waiting,omitempty"`
+	Running    *ContainerStateRunning    `json:"running,omitempty"`
+	Terminated *ContainerStateTerminated `json:"terminated,omitempty"`
 }
 
 type ContainerStatus struct {
@@ -966,7 +966,7 @@ type ReplicationControllerSpec struct {
 	// TemplateRef is a reference to an object that describes the pod that will be created if
 	// insufficient replicas are detected. This reference is ignored if a Template is set.
 	// Must be set before converting to a v1beta3 API object
-	TemplateRef *ObjectReference `json:"templateRef,omitempty"`
+	//TemplateRef *ObjectReference `json:"templateRef,omitempty"`
 
 	// Template is the object that describes the pod that will be created if
 	// insufficient replicas are detected. Internally, this takes precedence over a
