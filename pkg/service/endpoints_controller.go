@@ -25,8 +25,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/endpoints"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/v1beta1"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/v1beta2"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/controller/framework"
@@ -295,11 +293,6 @@ func (e *endpointController) syncService(key string) {
 
 		for i := range service.Spec.Ports {
 			servicePort := &service.Spec.Ports[i]
-
-			// TODO(k8s): Once v1beta1 and v1beta2 are EOL'ed, this can
-			// assume that service.Spec.TargetPort is populated.
-			_ = v1beta1.Dependency
-			_ = v1beta2.Dependency
 
 			portName := servicePort.Name
 			portProto := servicePort.Protocol

@@ -124,7 +124,7 @@ func (s *CMServer) Run(_ []string) error {
 	cloud := cloudprovider.InitCloudProvider(s.CloudProvider, s.CloudConfigFile)
 
 	nodeController := nodecontroller.NewNodeController(cloud, kubeClient, s.RegisterRetryCount,
-		s.PodEvictionTimeout, util.NewTokenBucketRateLimiter(s.DeletingPodsQps, s.DeletingPodsBurst),
+		s.PodEvictionTimeout, nodecontroller.NewPodEvictor(util.NewTokenBucketRateLimiter(s.DeletingPodsQps, s.DeletingPodsBurst)),
 		s.NodeMonitorGracePeriod, s.NodeStartupGracePeriod, s.NodeMonitorPeriod, (*net.IPNet)(&s.ClusterCIDR), s.AllocateNodeCIDRs)
 	nodeController.Run(s.NodeSyncPeriod)
 
@@ -133,14 +133,14 @@ func (s *CMServer) Run(_ []string) error {
 		glog.Errorf("Failed to start service controller: %v", err)
 	}
 
-        if s.AllocateNodeCIDRs {
-                routes, ok := cloud.Routes()
-                if !ok {
-                        glog.Fatal("Cloud provider must support routes if allocate-node-cidrs is set")
-                }
-                routeController := routecontroller.New(routes, kubeClient, s.ClusterName, (*net.IPNet)(&s.ClusterCIDR))
-                routeController.Run(s.NodeSyncPeriod)
-        }
+	if s.AllocateNodeCIDRs {
+		routes, ok := cloud.Routes()
+		if !ok {
+			glog.Fatal("Cloud provider must support routes if allocate-node-cidrs is set")
+		}
+		routeController := routecontroller.New(routes, kubeClient, s.ClusterName, (*net.IPNet)(&s.ClusterCIDR))
+		routeController.Run(s.NodeSyncPeriod)
+	}
 
 	resourceQuotaManager := resourcequota.NewResourceQuotaManager(kubeClient)
 	resourceQuotaManager.Run(s.ResourceQuotaSyncPeriod)
