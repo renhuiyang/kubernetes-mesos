@@ -48,6 +48,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/master/ports"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/mount"
+	nodeutil "github.com/GoogleCloudPlatform/kubernetes/pkg/util/node"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/volume"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/cloudprovider"
@@ -111,6 +112,7 @@ type KubeletServer struct {
 	SystemContainer                string
 	ConfigureCBR0                  bool
 	MaxPods                        int
+	DockerExecHandlerName          string
 
 	// Flags intended for testing
 
@@ -173,6 +175,7 @@ func NewKubeletServer() *KubeletServer {
 		DockerDaemonContainer:       "/docker-daemon",
 		SystemContainer:             "",
 		ConfigureCBR0:               false,
+		DockerExecHandlerName:       "native",
 	}
 }
 
@@ -233,6 +236,7 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&s.SystemContainer, "system-container", s.SystemContainer, "Optional resource-only container in which to place all non-kernel processes that are not already in a container. Empty for no container. Rolling back the flag requires a reboot. (Default: \"\").")
 	fs.BoolVar(&s.ConfigureCBR0, "configure-cbr0", s.ConfigureCBR0, "If true, kubelet will configure cbr0 based on Node.Spec.PodCIDR.")
 	fs.IntVar(&s.MaxPods, "max-pods", 100, "Number of Pods that can run on this Kubelet.")
+	fs.StringVar(&s.DockerExecHandlerName, "docker-exec-handler", s.DockerExecHandlerName, "Handler to use when executing a command in a container. Valid values are 'native' and 'nsenter'. Defaults to 'native'.")
 
 	// Flags intended for testing, not recommended used in production environments.
 	fs.BoolVar(&s.ReallyCrashForTesting, "really-crash-for-testing", s.ReallyCrashForTesting, "If true, when panics occur crash. Intended for testing.")
@@ -291,6 +295,17 @@ func (s *KubeletServer) Run(_ []string) error {
 		mounter = &mount.NsenterMounter{}
 	}
 
+	var dockerExecHandler dockertools.ExecHandler
+	switch s.DockerExecHandlerName {
+	case "native":
+		dockerExecHandler = &dockertools.NativeExecHandler{}
+	case "nsenter":
+		dockerExecHandler = &dockertools.NsenterExecHandler{}
+	default:
+		glog.Warningf("Unknown Docker exec handler %q; defaulting to native", s.DockerExecHandlerName)
+		dockerExecHandler = &dockertools.NativeExecHandler{}
+	}
+
 	kcfg := KubeletConfig{
 		Address:                        s.Address,
 		AllowPrivileged:                s.AllowPrivileged,
@@ -337,6 +352,7 @@ func (s *KubeletServer) Run(_ []string) error {
 		SystemContainer:           s.SystemContainer,
 		ConfigureCBR0:             s.ConfigureCBR0,
 		MaxPods:                   s.MaxPods,
+		DockerExecHandler:         dockerExecHandler,
 	}
 
 	if err := RunKubelet(&kcfg, nil); err != nil {
@@ -367,7 +383,7 @@ func (s *KubeletServer) InitializeTLS() (*kubelet.TLSOptions, error) {
 	if s.TLSCertFile == "" && s.TLSPrivateKeyFile == "" {
 		s.TLSCertFile = path.Join(s.CertDirectory, "kubelet.crt")
 		s.TLSPrivateKeyFile = path.Join(s.CertDirectory, "kubelet.key")
-		if err := util.GenerateSelfSignedCert(util.GetHostname(s.HostnameOverride), s.TLSCertFile, s.TLSPrivateKeyFile); err != nil {
+		if err := util.GenerateSelfSignedCert(nodeutil.GetHostname(s.HostnameOverride), s.TLSCertFile, s.TLSPrivateKeyFile); err != nil {
 			return nil, fmt.Errorf("unable to generate self signed cert: %v", err)
 		}
 		glog.V(4).Infof("Using self-signed cert (%s, %s)", s.TLSCertFile, s.TLSPrivateKeyFile)
@@ -527,6 +543,7 @@ func SimpleKubelet(client *client.Client,
 		DockerDaemonContainer:     "/docker-daemon",
 		SystemContainer:           "",
 		MaxPods:                   32,
+		DockerExecHandler:         &dockertools.NativeExecHandler{},
 	}
 	return &kcfg
 }
@@ -537,7 +554,7 @@ func SimpleKubelet(client *client.Client,
 //   3 Standalone 'kubernetes' binary
 // Eventually, #2 will be replaced with instances of #3
 func RunKubelet(kcfg *KubeletConfig, builder KubeletBuilder) error {
-	kcfg.Hostname = util.GetHostname(kcfg.HostnameOverride)
+	kcfg.Hostname = nodeutil.GetHostname(kcfg.HostnameOverride)
 	eventBroadcaster := record.NewBroadcaster()
 	kcfg.Recorder = eventBroadcaster.NewRecorder(api.EventSource{Component: "kubelet", Host: kcfg.Hostname})
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -664,6 +681,7 @@ type KubeletConfig struct {
 	SystemContainer                string
 	ConfigureCBR0                  bool
 	MaxPods                        int
+	DockerExecHandler              dockertools.ExecHandler
 }
 
 func createAndInitKubelet(kc *KubeletConfig) (k KubeletBootstrap, pc *config.PodConfig, err error) {
@@ -717,7 +735,8 @@ func createAndInitKubelet(kc *KubeletConfig) (k KubeletBootstrap, pc *config.Pod
 		kc.DockerDaemonContainer,
 		kc.SystemContainer,
 		kc.ConfigureCBR0,
-		kc.MaxPods)
+		kc.MaxPods,
+		kc.DockerExecHandler)
 
 	if err != nil {
 		return nil, nil, err
