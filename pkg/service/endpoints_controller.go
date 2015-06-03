@@ -48,26 +48,6 @@ type EndpointController interface {
 	Run(workers int, stopCh <-chan struct{})
 }
 
-// EndpointController manages selector-based service endpoints.
-type endpointController struct {
-	client *client.Client
-
-	serviceStore cache.StoreToServiceLister
-	podStore     cache.StoreToPodLister
-
-	// Services that need to be updated. A channel is inappropriate here,
-	// because it allows services with lots of pods to be serviced much
-	// more often than services with few pods; it also would cause a
-	// service that's inserted multiple times to be processed more than
-	// necessary.
-	queue *workqueue.Type
-
-	// Since we join two objects, we'll watch both of them with
-	// controllers.
-	serviceController *framework.Controller
-	podController     *framework.Controller
-}
-
 // NewEndpointController returns a new *EndpointController.
 func NewEndpointController(client *client.Client) *endpointController {
 	e := &endpointController{
@@ -112,6 +92,26 @@ func NewEndpointController(client *client.Client) *endpointController {
 		},
 	)
 	return e
+}
+
+// EndpointController manages selector-based service endpoints.
+type endpointController struct {
+	client *client.Client
+
+	serviceStore cache.StoreToServiceLister
+	podStore     cache.StoreToPodLister
+
+	// Services that need to be updated. A channel is inappropriate here,
+	// because it allows services with lots of pods to be serviced much
+	// more often than services with few pods; it also would cause a
+	// service that's inserted multiple times to be processed more than
+	// necessary.
+	queue *workqueue.Type
+
+	// Since we join two objects, we'll watch both of them with
+	// controllers.
+	serviceController *framework.Controller
+	podController     *framework.Controller
 }
 
 // Runs e; will not return until stopCh is closed. workers determines how many
@@ -243,7 +243,6 @@ func (e *endpointController) worker() {
 	}
 }
 
-// SyncServiceEndpoints syncs endpoints for services with selectors.
 func (e *endpointController) syncService(key string) {
 	startTime := time.Now()
 	defer func() {
@@ -298,12 +297,12 @@ func (e *endpointController) syncService(key string) {
 			portProto := servicePort.Protocol
 			portNum, err := findPort(pod, servicePort)
 			if err != nil {
-				glog.Errorf("Failed to find port for service %s/%s: %v", service.Namespace, service.Name, err)
+				glog.V(4).Infof("Failed to find port for service %s/%s: %v", service.Namespace, service.Name, err)
 				continue
 			}
 			// HACK(jdef): use HostIP instead of pod.CurrentState.PodIP for generic mesos compat
 			if len(pod.Status.HostIP) == 0 {
-				glog.Errorf("Failed to find a host IP for pod %s/%s", pod.Namespace, pod.Name)
+				glog.V(4).Infof("Failed to find a host IP for pod %s/%s", pod.Namespace, pod.Name)
 				continue
 			}
 			if !api.IsPodReady(pod) {
@@ -337,7 +336,7 @@ func (e *endpointController) syncService(key string) {
 			}
 		} else {
 			glog.Errorf("Error getting endpoints: %v", err)
-			e.queue.Add(key) // retry
+			e.queue.Add(key) // Retry
 			return
 		}
 	}
@@ -358,7 +357,7 @@ func (e *endpointController) syncService(key string) {
 	}
 	if err != nil {
 		glog.Errorf("Error updating endpoints: %v", err)
-		e.queue.Add(key)
+		e.queue.Add(key) // Retry
 	}
 }
 
@@ -385,23 +384,8 @@ func (e *endpointController) checkLeftoverEndpoints() {
 	}
 }
 
-// returns the default mapped HostPort instead of the ContainerPort for mesos compat
-func findDefaultPort(pod *api.Pod, servicePort int, proto api.Protocol) int {
-	for _, container := range pod.Spec.Containers {
-		for _, port := range container.Ports {
-			if p, err := findMappedPort(pod, proto, port.ContainerPort); err == nil {
-				return p
-			}
-		}
-	}
-	return servicePort
-}
-
-// If the targetPort is a non-zero number, use that.  If the targetPort is 0 or
-// not specified, use the first defined port with the same protocol.  If no port
-// is defined, use the service's port.  If the targetPort is an empty string use
-// the first defined port with the same protocol.  If no port is defined, use
-// the service's port.  If the targetPort is a non-empty string, look that
+// findPort locates the container port for the given pod and portName.  If the
+// targetPort is a number, use that.  If the targetPort is a string, look that
 // string up in all named ports in all containers in the target pod.  If no
 // match is found, fail.
 //
@@ -410,9 +394,6 @@ func findPort(pod *api.Pod, svcPort *api.ServicePort) (int, error) {
 	portName := svcPort.TargetPort
 	switch portName.Kind {
 	case util.IntstrString:
-		if len(portName.StrVal) == 0 {
-			return findDefaultPort(pod, svcPort.Port, svcPort.Protocol), nil
-		}
 		name := portName.StrVal
 		for _, container := range pod.Spec.Containers {
 			for _, port := range container.Ports {
@@ -421,11 +402,7 @@ func findPort(pod *api.Pod, svcPort *api.ServicePort) (int, error) {
 				}
 			}
 		}
-		return -1, fmt.Errorf("no suitable port %s for manifest: %s", name, pod.UID)
 	case util.IntstrInt:
-		if portName.IntVal == 0 {
-			return findDefaultPort(pod, svcPort.Port, svcPort.Protocol), nil
-		}
 		// HACK(jdef): slightly different semantics from upstream here:
 		// we ensure that if the user spec'd a port in the service that
 		// it actually maps to a host-port assigned to the pod. upstream
@@ -434,15 +411,13 @@ func findPort(pod *api.Pod, svcPort *api.ServicePort) (int, error) {
 		p := portName.IntVal
 		for _, container := range pod.Spec.Containers {
 			for _, port := range container.Ports {
-				if port.ContainerPort == p {
+				if port.ContainerPort == p && port.Protocol == svcPort.Protocol {
 					return findMappedPort(pod, port.Protocol, p)
 				}
 			}
 		}
-		return -1, fmt.Errorf("no suitable port %d for manifest: %s", p, pod.UID)
 	}
-	// should never get this far..
-	return -1, fmt.Errorf("no suitable port for manifest: %s", pod.UID)
+	return 0, fmt.Errorf("no suitable port for manifest: %s", pod.UID)
 }
 
 func findMappedPort(pod *api.Pod, protocol api.Protocol, port int) (int, error) {
@@ -452,7 +427,7 @@ func findMappedPort(pod *api.Pod, protocol api.Protocol, port int) (int, error) 
 			return strconv.Atoi(value)
 		}
 	}
-	return -1, fmt.Errorf("failed to find mapped container %s port: %d", protocol, port)
+	return 0, fmt.Errorf("failed to find mapped container %s port: %d", protocol, port)
 }
 
 func findMappedPortName(pod *api.Pod, protocol api.Protocol, portName string) (int, error) {
@@ -462,5 +437,5 @@ func findMappedPortName(pod *api.Pod, protocol api.Protocol, portName string) (i
 			return strconv.Atoi(value)
 		}
 	}
-	return -1, fmt.Errorf("failed to find mapped container %s port name: %q", protocol, portName)
+	return 0, fmt.Errorf("failed to find mapped container %s port name: %q", protocol, portName)
 }
