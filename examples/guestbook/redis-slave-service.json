@@ -9,7 +9,9 @@
     "ports": [
       {
         "port": 10001,
-        "protocol": "TCP"
+        "protocol": "TCP",
+        "targetPort": 6379,
+        "name": "redis"
       }
     ],
     "selector": {
