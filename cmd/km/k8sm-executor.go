@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/service"
+	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/executor/service"
 )
 
 // NewHyperkubeServer creates a new hyperkube Server object that includes the

@@ -29,6 +29,7 @@ import (
 	"strconv"
 
 	"github.com/GoogleCloudPlatform/kubernetes/cmd/kube-controller-manager/app"
+	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/profile"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/clientcmd"
 	clientcmdapi "github.com/GoogleCloudPlatform/kubernetes/pkg/client/clientcmd/api"
@@ -45,7 +46,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/serviceaccount"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/volumeclaimbinder"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/profile"
 
 	"github.com/golang/glog"
 	kmendpoint "github.com/mesosphere/kubernetes-mesos/pkg/service"

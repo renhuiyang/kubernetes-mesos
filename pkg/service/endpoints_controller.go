@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/endpoints"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
@@ -35,7 +36,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/workqueue"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/meta"
 
 	"github.com/golang/glog"
 )
