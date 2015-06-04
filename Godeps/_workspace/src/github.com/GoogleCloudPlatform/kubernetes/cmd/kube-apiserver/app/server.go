@@ -59,7 +59,6 @@ type APIServer struct {
 	InsecurePort               int
 	BindAddress                util.IP
 	AdvertiseAddress           util.IP
-	ReadOnlyPort               int
 	SecurePort                 int
 	ExternalHost               string
 	APIRate                    float32
@@ -96,6 +95,7 @@ type APIServer struct {
 	ClusterName                string
 	EnableProfiling            bool
 	MaxRequestsInFlight        int
+	MinRequestTimeout          int
 	LongRunningRequestRE       string
 }
 
@@ -105,7 +105,6 @@ func NewAPIServer() *APIServer {
 		InsecurePort:           8080,
 		InsecureBindAddress:    util.IP(net.ParseIP("127.0.0.1")),
 		BindAddress:            util.IP(net.ParseIP("0.0.0.0")),
-		ReadOnlyPort:           7080,
 		SecurePort:             6443,
 		APIRate:                10.0,
 		APIBurst:               200,
@@ -155,10 +154,6 @@ func (s *APIServer) AddFlags(fs *pflag.FlagSet) {
 		"will be used. If --bind-address is unspecified, the host's default interface will "+
 		"be used.")
 	fs.Var(&s.BindAddress, "public-address-override", "DEPRECATED: see --bind-address instead")
-	fs.IntVar(&s.ReadOnlyPort, "read-only-port", s.ReadOnlyPort, ""+
-		"The port on which to serve read-only resources. If 0, don't serve read-only "+
-		"at all. It is assumed that firewall rules are set up such that this port is "+
-		"not reachable from outside of the cluster.")
 	fs.IntVar(&s.SecurePort, "secure-port", s.SecurePort, ""+
 		"The port on which to serve HTTPS with authentication and authorization. If 0, "+
 		"don't serve HTTPS at all.")
@@ -204,6 +199,7 @@ func (s *APIServer) AddFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&s.EnableProfiling, "profiling", true, "Enable profiling via web interface host:port/debug/pprof/")
 	fs.StringVar(&s.ExternalHost, "external-hostname", "", "The hostname to use when generating externalized URLs for this master (e.g. Swagger API Docs.)")
 	fs.IntVar(&s.MaxRequestsInFlight, "max-requests-inflight", 400, "The maximum number of requests in flight at a given time.  When the server exceeds this, it rejects requests.  Zero for no limit.")
+	fs.IntVar(&s.MinRequestTimeout, "min-request-timeout", 1800, "An optional field indicating the minimum number of seconds a handler must keep a request open before timing it out. Currently only honored by the watch request handler, which picks a randomized value above this number as the connection timeout, to spread out load.")
 	fs.StringVar(&s.LongRunningRequestRE, "long-running-request-regexp", "[.*\\/watch$][^\\/proxy.*]", "A regular expression matching long running requests which should be excluded from maximum inflight request handling.")
 }
 
@@ -368,7 +364,6 @@ func (s *APIServer) Run(_ []string) error {
 		EnableIndex:            true,
 		APIPrefix:              s.APIPrefix,
 		CorsAllowedOriginList:  s.CorsAllowedOriginList,
-		ReadOnlyPort:           s.ReadOnlyPort,
 		ReadWritePort:          s.SecurePort,
 		PublicAddress:          net.IP(s.AdvertiseAddress),
 		Authenticator:          authenticator,
@@ -380,14 +375,11 @@ func (s *APIServer) Run(_ []string) error {
 		MasterServiceNamespace: s.MasterServiceNamespace,
 		ClusterName:            s.ClusterName,
 		ExternalHost:           s.ExternalHost,
+		MinRequestTimeout:      s.MinRequestTimeout,
 	}
 	m := master.New(config)
 
-	// We serve on 3 ports.  See docs/accessing_the_api.md
-	roLocation := ""
-	if s.ReadOnlyPort != 0 {
-		roLocation = net.JoinHostPort(s.BindAddress.String(), strconv.Itoa(s.ReadOnlyPort))
-	}
+	// We serve on 2 ports.  See docs/accessing_the_api.md
 	secureLocation := ""
 	if s.SecurePort != 0 {
 		secureLocation = net.JoinHostPort(s.BindAddress.String(), strconv.Itoa(s.SecurePort))
@@ -402,28 +394,6 @@ func (s *APIServer) Run(_ []string) error {
 	}
 
 	longRunningRE := regexp.MustCompile(s.LongRunningRequestRE)
-
-	if roLocation != "" {
-		// Default settings allow 1 read-only request per second, allow up to 20 in a burst before enforcing.
-		rl := util.NewTokenBucketRateLimiter(s.APIRate, s.APIBurst)
-		readOnlyServer := &http.Server{
-			Addr:           roLocation,
-			Handler:        apiserver.MaxInFlightLimit(sem, longRunningRE, apiserver.RecoverPanics(apiserver.ReadOnly(apiserver.RateLimit(rl, m.InsecureHandler)))),
-			ReadTimeout:    ReadWriteTimeout,
-			WriteTimeout:   ReadWriteTimeout,
-			MaxHeaderBytes: 1 << 20,
-		}
-		glog.Infof("Serving read-only insecurely on %s", roLocation)
-		go func() {
-			defer util.HandleCrash()
-			for {
-				if err := readOnlyServer.ListenAndServe(); err != nil {
-					glog.Errorf("Unable to listen for read only traffic (%v); will try again.", err)
-				}
-				time.Sleep(15 * time.Second)
-			}
-		}()
-	}
 
 	if secureLocation != "" {
 		secureServer := &http.Server{

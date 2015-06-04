@@ -111,13 +111,14 @@ type Config struct {
 	// If specified, all web services will be registered into this container
 	RestfulContainer *restful.Container
 
+	// If specified, requests will be allocated a random timeout between this value, and twice this value.
+	// Note that it is up to the request handlers to ignore or honor this timeout.
+	MinRequestTimeout int
+
 	// Number of masters running; all masters must be started with the
 	// same value for this field. (Numbers > 1 currently untested.)
 	MasterCount int
 
-	// The port on PublicAddress where a read-only server will be installed.
-	// Defaults to 7080 if not set.
-	ReadOnlyPort int
 	// The port on PublicAddress where a read-write server will be installed.
 	// Defaults to 6443 if not set.
 	ReadWritePort int
@@ -153,7 +154,7 @@ type Master struct {
 
 	mux                   apiserver.Mux
 	muxHelper             *apiserver.MuxHelper
-	handlerContainer      *restful.Container
+	handlerContainer      *apiserver.RestContainer
 	rootWebService        *restful.WebService
 	enableCoreControllers bool
 	enableLogsSupport     bool
@@ -174,10 +175,7 @@ type Master struct {
 	externalHost string
 	// clusterIP is the IP address of the master within the cluster.
 	clusterIP            net.IP
-	publicReadOnlyPort   int
 	publicReadWritePort  int
-	serviceReadOnlyIP    net.IP
-	serviceReadOnlyPort  int
 	serviceReadWriteIP   net.IP
 	serviceReadWritePort int
 	masterServices       *util.Runner
@@ -240,9 +238,6 @@ func setDefaults(c *Config) {
 		// Clearly, there will be at least one master.
 		c.MasterCount = 1
 	}
-	if c.ReadOnlyPort == 0 {
-		c.ReadOnlyPort = 7080
-	}
 	if c.ReadWritePort == 0 {
 		c.ReadWritePort = 6443
 	}
@@ -272,7 +267,6 @@ func setDefaults(c *Config) {
 //   ServiceClusterIPRange
 //   ServiceNodePortRange
 //   MasterCount
-//   ReadOnlyPort
 //   ReadWritePort
 //   PublicAddress
 // Certain config fields must be specified, including:
@@ -297,16 +291,12 @@ func New(c *Config) *Master {
 		glog.Fatalf("master.New() called with config.KubeletClient == nil")
 	}
 
-	// Select the first two valid IPs from serviceClusterIPRange to use as the master service IPs
-	serviceReadOnlyIP, err := ipallocator.GetIndexedIP(c.ServiceClusterIPRange, 1)
-	if err != nil {
-		glog.Fatalf("Failed to generate service read-only IP for master service: %v", err)
-	}
-	serviceReadWriteIP, err := ipallocator.GetIndexedIP(c.ServiceClusterIPRange, 2)
+	// Select the first valid IP from serviceClusterIPRange to use as the master service IP.
+	serviceReadWriteIP, err := ipallocator.GetIndexedIP(c.ServiceClusterIPRange, 1)
 	if err != nil {
 		glog.Fatalf("Failed to generate service read-write IP for master service: %v", err)
 	}
-	glog.V(4).Infof("Setting master service IPs based to %q (read-only) and %q (read-write).", serviceReadOnlyIP, serviceReadWriteIP)
+	glog.V(4).Infof("Setting master service IP to %q (read-write).", serviceReadWriteIP)
 
 	m := &Master{
 		serviceClusterIPRange: c.ServiceClusterIPRange,
@@ -331,29 +321,28 @@ func New(c *Config) *Master {
 		masterCount:         c.MasterCount,
 		externalHost:        c.ExternalHost,
 		clusterIP:           c.PublicAddress,
-		publicReadOnlyPort:  c.ReadOnlyPort,
 		publicReadWritePort: c.ReadWritePort,
-		serviceReadOnlyIP:   serviceReadOnlyIP,
-		// TODO: serviceReadOnlyPort should be passed in as an argument, it may not always be 80
-		serviceReadOnlyPort: 80,
 		serviceReadWriteIP:  serviceReadWriteIP,
 		// TODO: serviceReadWritePort should be passed in as an argument, it may not always be 443
 		serviceReadWritePort: 443,
 	}
 
+	var handlerContainer *restful.Container
 	if c.RestfulContainer != nil {
 		m.mux = c.RestfulContainer.ServeMux
-		m.handlerContainer = c.RestfulContainer
+		handlerContainer = c.RestfulContainer
 	} else {
 		mux := http.NewServeMux()
 		m.mux = mux
-		m.handlerContainer = NewHandlerContainer(mux)
+		handlerContainer = NewHandlerContainer(mux)
 	}
+	m.handlerContainer = &apiserver.RestContainer{handlerContainer, c.MinRequestTimeout}
 	// Use CurlyRouter to be able to use regular expressions in paths. Regular expressions are required in paths for example for proxy (where the path is proxy/{kind}/{name}/{*})
 	m.handlerContainer.Router(restful.CurlyRouter{})
 	m.muxHelper = &apiserver.MuxHelper{m.mux, []string{}}
 
 	m.init(c)
+
 	return m
 }
 
@@ -507,16 +496,16 @@ func (m *Master) init(c *Config) {
 	}
 
 	apiserver.InstallSupport(m.muxHelper, m.rootWebService)
-	apiserver.AddApiWebService(m.handlerContainer, c.APIPrefix, apiVersions)
+	apiserver.AddApiWebService(m.handlerContainer.Container, c.APIPrefix, apiVersions)
 	defaultVersion := m.defaultAPIGroupVersion()
 	requestInfoResolver := &apiserver.APIRequestInfoResolver{util.NewStringSet(strings.TrimPrefix(defaultVersion.Root, "/")), defaultVersion.Mapper}
-	apiserver.InstallServiceErrorHandler(m.handlerContainer, requestInfoResolver, apiVersions)
+	apiserver.InstallServiceErrorHandler(m.handlerContainer.Container, requestInfoResolver, apiVersions)
 
 	// Register root handler.
 	// We do not register this using restful Webservice since we do not want to surface this in api docs.
 	// Allow master to be embedded in contexts which already have something registered at the root
 	if c.EnableIndex {
-		m.mux.HandleFunc("/", apiserver.IndexHandler(m.handlerContainer, m.muxHelper))
+		m.mux.HandleFunc("/", apiserver.IndexHandler(m.handlerContainer.Container, m.muxHelper))
 	}
 
 	if c.EnableLogsSupport {
@@ -612,10 +601,6 @@ func (m *Master) NewBootstrapController() *Controller {
 		ServiceIP:         m.serviceReadWriteIP,
 		ServicePort:       m.serviceReadWritePort,
 		PublicServicePort: m.publicReadWritePort,
-
-		ReadOnlyServiceIP:         m.serviceReadOnlyIP,
-		ReadOnlyServicePort:       m.serviceReadOnlyPort,
-		PublicReadOnlyServicePort: m.publicReadOnlyPort,
 	}
 }
 
@@ -633,10 +618,6 @@ func (m *Master) InstallSwaggerAPI() {
 		host := m.clusterIP.String()
 		if m.publicReadWritePort != 0 {
 			hostAndPort = net.JoinHostPort(host, strconv.Itoa(m.publicReadWritePort))
-		} else {
-			// Use the read only port.
-			hostAndPort = net.JoinHostPort(host, strconv.Itoa(m.publicReadOnlyPort))
-			protocol = "http://"
 		}
 	}
 	webServicesUrl := protocol + hostAndPort
@@ -649,7 +630,7 @@ func (m *Master) InstallSwaggerAPI() {
 		SwaggerPath:     "/swaggerui/",
 		SwaggerFilePath: "/swagger-ui/",
 	}
-	swagger.RegisterSwaggerService(swaggerConfig, m.handlerContainer)
+	swagger.RegisterSwaggerService(swaggerConfig, m.handlerContainer.Container)
 }
 
 func (m *Master) getServersToValidate(c *Config) map[string]apiserver.Server {

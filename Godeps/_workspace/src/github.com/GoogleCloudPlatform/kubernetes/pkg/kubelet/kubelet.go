@@ -54,7 +54,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	utilErrors "github.com/GoogleCloudPlatform/kubernetes/pkg/util/errors"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/mount"
-	nodeutil "github.com/GoogleCloudPlatform/kubernetes/pkg/util/node"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/version"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/volume"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
@@ -872,7 +871,7 @@ func (kl *Kubelet) GenerateRunContainerOptions(pod *api.Pod, container *api.Cont
 	return opts, nil
 }
 
-var masterServices = util.NewStringSet("kubernetes", "kubernetes-ro")
+var masterServices = util.NewStringSet("kubernetes")
 
 // getServiceEnvVarMap makes a map[string]string of env vars for services a pod in namespace ns should see
 func (kl *Kubelet) getServiceEnvVarMap(ns string) (map[string]string, error) {
@@ -909,8 +908,7 @@ func (kl *Kubelet) getServiceEnvVarMap(ns string) (map[string]string, error) {
 			serviceMap[serviceName] = service
 		case kl.masterServiceNamespace:
 			if masterServices.Has(serviceName) {
-				_, exists := serviceMap[serviceName]
-				if !exists {
+				if _, exists := serviceMap[serviceName]; !exists {
 					serviceMap[serviceName] = service
 				}
 			}
@@ -1725,7 +1723,21 @@ func (kl *Kubelet) GetHostIP() (net.IP, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot get node: %v", err)
 	}
-	return nodeutil.GetNodeHostIP(node)
+	addresses := node.Status.Addresses
+	addressMap := make(map[api.NodeAddressType][]api.NodeAddress)
+	for i := range addresses {
+		addressMap[addresses[i].Type] = append(addressMap[addresses[i].Type], addresses[i])
+	}
+	if addresses, ok := addressMap[api.NodeLegacyHostIP]; ok {
+		return net.ParseIP(addresses[0].Address), nil
+	}
+	if addresses, ok := addressMap[api.NodeInternalIP]; ok {
+		return net.ParseIP(addresses[0].Address), nil
+	}
+	if addresses, ok := addressMap[api.NodeExternalIP]; ok {
+		return net.ParseIP(addresses[0].Address), nil
+	}
+	return nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
 }
 
 // GetPods returns all pods bound to the kubelet and their spec, and the mirror
